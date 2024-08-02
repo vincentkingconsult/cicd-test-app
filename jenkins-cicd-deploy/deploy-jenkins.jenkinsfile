@@ -53,18 +53,6 @@ pipeline {
             }
         }
 
-        stage('Testing') {
-            steps {
-                script {
-                    // Run Selenium tests
-                    // Ensure Selenium tests are integrated into Maven or adapt this step accordingly
-                    docker.image("${IMAGE_NAME}:${IMAGE_TAG}").inside {
-                        sh 'mvn test'
-                    }
-                }
-            }
-        }
-
         stage('Maven Build') {
             steps {
                 script {
@@ -81,6 +69,19 @@ pipeline {
                     sh '''
                         docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -f ${DOCKERFILE_PATH} .
                     '''
+                }
+            }
+        }
+
+
+        stage('Testing') {
+            steps {
+                script {
+                    // Run Selenium tests
+                    // Ensure Selenium tests are integrated into Maven or adapt this step accordingly
+                    docker.image("${IMAGE_NAME}:${IMAGE_TAG}").inside {
+                        sh 'mvn test'
+                    }
                 }
             }
         }

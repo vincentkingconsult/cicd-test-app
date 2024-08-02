@@ -36,7 +36,7 @@ Build: Builds the Java application using Maven.
 Docker Build: Builds the Docker image using the Dockerfile.
 Deploy: Updates the Kubernetes deployment with the new Docker image.
 
-# How to Run the Playbook:
+# How to Run Jenkins Pipeline:
 Save the Jenkinsfile in your repository.
 
 Configure a Jenkins Pipeline job to use this Jenkinsfile.
