@@ -1,0 +1,119 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'us-east-1'
+        EKS_CLUSTER_NAME = 'my-bamise-cluster'
+        IMAGE_NAME = 'my-test-image'
+        IMAGE_TAG = 'latest'
+        DOCKERFILE_PATH = 'Dockerfile'
+        SONARQUBE_URL = 'http://dev-sonarqube.bamise.com'
+        SONARQUBE_PROJECT_KEY = 'my-project-key'
+        SONARQUBE_CREDENTIALS_ID = 'sonarqube-credentials-id'
+        AWS_CREDENTIALS_ID = 'aws-credentials-id'
+    }
+
+    stages {
+        stage('Checkout SCM') {
+            steps {
+                // Checkout code from AWS CodeCommit
+                checkout([$class: 'GitSCM',
+                          userRemoteConfigs: [[url: 'https://git-codecommit.us-east-1.amazonaws.com/v1/repos/my-test-repo']],
+                          branches: [[name: 'refs/heads/main']]
+                ])
+            }
+        }
+
+        stage('Code Scanning') {
+            steps {
+                script {
+                    // Run SonarQube analysis
+                    withCredentials([usernamePassword(credentialsId: "${SONARQUBE_CREDENTIALS_ID}", passwordVariable: 'SONARQUBE_PASSWORD', usernameVariable: 'SONARQUBE_USER')]) {
+                        sh '''
+                            mvn sonar:sonar \
+                            -Dsonar.host.url=${SONARQUBE_URL} \
+                            -Dsonar.login=${SONARQUBE_USER} \
+                            -Dsonar.password=${SONARQUBE_PASSWORD} \
+                            -Dsonar.projectKey=${SONARQUBE_PROJECT_KEY}
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                script {
+                    // Scan Docker image with Trivy
+                    sh '''
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -f ${DOCKERFILE_PATH} .
+                        trivy image ${IMAGE_NAME}:${IMAGE_TAG}
+                    '''
+                }
+            }
+        }
+
+        stage('Testing') {
+            steps {
+                script {
+                    // Run Selenium tests
+                    // Ensure Selenium tests are integrated into Maven or adapt this step accordingly
+                    docker.image("${IMAGE_NAME}:${IMAGE_TAG}").inside {
+                        sh 'mvn test'
+                    }
+                }
+            }
+        }
+
+        stage('Maven Build') {
+            steps {
+                script {
+                    // Build the Java application with Maven
+                    sh 'mvn clean package'
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    // Build Docker image
+                    sh '''
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} -f ${DOCKERFILE_PATH} .
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    // Configure AWS CLI
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID"}]]) {
+                        sh '''
+                            aws eks update-kubeconfig --name ${EKS_CLUSTER_NAME} --region ${AWS_REGION}
+                        '''
+                    }
+
+                    // Deploy to Kubernetes
+                    sh '''
+                        kubectl set image deployment/my-app-deployment my-app-container=${IMAGE_NAME}:${IMAGE_TAG}
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean up Docker images
+            sh 'docker system prune -af || true'
+        }
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
